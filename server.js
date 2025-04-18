@@ -1,30 +1,33 @@
-const express = require("express");
-const axios = require("axios");
+const express = require('express');
+const axios = require('axios');
+const crypto = require('crypto');
+const cors = require('cors');
+
 const app = express();
+app.use(cors());
 app.use(express.json());
 
-const BASE_URL = "https://api-testnet.bybit.com"; // or "https://api.bybit.com" for live
+const PORT = process.env.PORT || 3000;
 
-app.post("/proxy", async (req, res) => {
+app.post('/call-bybit', async (req, res) => {
   try {
-    const { method, path, headers, body } = req.body;
-    const url = `${BASE_URL}${path}`;
-    const response = await axios({
-      method,
-      url,
-      headers,
-      data: body || {}
-    });
+    const { apiKey, apiSecret, endpoint, params, testnet } = req.body;
+    const baseUrl = testnet ? 'https://api-testnet.bybit.com' : 'https://api.bybit.com';
+    const timestamp = Date.now().toString();
+    const recvWindow = 5000;
+    const paramStr = new URLSearchParams({ ...params, api_key: apiKey, recv_window: recvWindow, timestamp }).toString();
+
+    const signature = crypto.createHmac('sha256', apiSecret).update(paramStr).digest('hex');
+
+    const fullUrl = `${baseUrl}${endpoint}?${paramStr}&sign=${signature}`;
+    const response = await axios.get(fullUrl);
     res.json(response.data);
   } catch (err) {
-    res.status(500).json({
-      error: err.message,
-      details: err.response?.data
-    });
+    console.error(err);
+    res.status(500).send({ error: err.toString() });
   }
 });
 
-app.get("/", (req, res) => res.send("Bybit Proxy is running."));
-
-const port = process.env.PORT || 3000;
-app.listen(port, () => console.log(`Proxy server running on ${port}`));
+app.listen(PORT, () => {
+  console.log(`Proxy running on port ${PORT}`);
+});
