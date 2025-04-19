@@ -1,74 +1,56 @@
+// server.js - Updated for better region handling
 const express = require('express');
 const axios = require('axios');
 const crypto = require('crypto');
 const app = express();
 
-// Middleware to parse JSON requests
 app.use(express.json());
 
-// Simple test endpoint
-app.get('/', (req, res) => {
-  res.send('Bybit Proxy Server is running');
-});
-
-// Main proxy endpoint
-app.post('/', async (req, res) => {
+// Add regional endpoint
+app.post('/bybit-api', async (req, res) => {
   try {
     const { apiKey, apiSecret, endpoint, params, testnet, method } = req.body;
     
-    // Validate required fields
-    if (!apiKey || !apiSecret || !endpoint || !method) {
-      return res.status(400).json({ error: "Missing required parameters" });
+    // Block US-East requests at the proxy level
+    if (process.env.RENDER_REGION === 'us-east') {
+      return res.status(403).json({ 
+        error: "US region blocked for Bybit access",
+        solution: "Redeploy in Singapore or Germany" 
+      });
     }
 
-    // Determine Bybit API URL
-    const baseUrl = testnet ? 
-      "https://api-testnet.bybit.com" : 
-      "https://api.bybit.com";
+    const baseUrl = testnet 
+      ? "https://api-testnet.bybit.com" 
+      : "https://api.bybit.com";
 
-    // Prepare request
     const timestamp = Date.now().toString();
-    const recvWindow = "5000";
-    
-    // Generate signature
-    const queryString = method === 'GET' ? 
-      `?${new URLSearchParams(params).toString()}` : '';
-    const payload = timestamp + apiKey + recvWindow + endpoint + queryString + 
-                   (method === 'POST' ? JSON.stringify(params) : '');
-    
     const signature = crypto
       .createHmac('sha256', apiSecret)
-      .update(payload)
+      .update(timestamp + apiKey + "5000" + endpoint + (method === 'POST' ? JSON.stringify(params) : ''))
       .digest('hex');
 
-    // Forward request to Bybit
-    const config = {
-      method: method,
-      url: `${baseUrl}${endpoint}${queryString}`,
+    const response = await axios({
+      method,
+      url: `${baseUrl}${endpoint}`,
       headers: {
         'X-BYBIT-API-KEY': apiKey,
         'X-BYBIT-TIMESTAMP': timestamp,
         'X-BYBIT-SIGN': signature,
-        'X-BYBIT-RECV-WINDOW': recvWindow,
-        'Content-Type': 'application/json'
+        'X-BYBIT-RECV-WINDOW': '5000',
+        'User-Agent': `BybitProxy/${process.env.RENDER_REGION || 'local'}`
       },
-      data: method === 'POST' ? params : undefined
-    };
+      data: params
+    });
 
-    const bybitResponse = await axios(config);
-    res.json(bybitResponse.data);
+    res.json(response.data);
   } catch (error) {
-    console.error('Proxy error:', error);
     res.status(500).json({ 
       error: "Proxy error",
-      message: error.message,
-      details: error.response?.data || null 
+      region: process.env.RENDER_REGION,
+      details: error.message 
     });
   }
 });
 
-// Start server
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Bybit proxy server running on port ${PORT}`);
-});
+app.listen(PORT, () => console.log(`Bybit proxy running in ${process.env.RENDER_REGION || 'unknown'} region`));
