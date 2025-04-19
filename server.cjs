@@ -1,33 +1,74 @@
 const express = require('express');
 const axios = require('axios');
 const crypto = require('crypto');
-const cors = require('cors');
-
 const app = express();
-app.use(cors());
+
+// Middleware to parse JSON requests
 app.use(express.json());
 
-const PORT = process.env.PORT || 3000;
+// Simple test endpoint
+app.get('/', (req, res) => {
+  res.send('Bybit Proxy Server is running');
+});
 
-app.post('/call-bybit', async (req, res) => {
+// Main proxy endpoint
+app.post('/', async (req, res) => {
   try {
-    const { apiKey, apiSecret, endpoint, params, testnet } = req.body;
-    const baseUrl = testnet ? 'https://api-testnet.bybit.com' : 'https://api.bybit.com';
+    const { apiKey, apiSecret, endpoint, params, testnet, method } = req.body;
+    
+    // Validate required fields
+    if (!apiKey || !apiSecret || !endpoint || !method) {
+      return res.status(400).json({ error: "Missing required parameters" });
+    }
+
+    // Determine Bybit API URL
+    const baseUrl = testnet ? 
+      "https://api-testnet.bybit.com" : 
+      "https://api.bybit.com";
+
+    // Prepare request
     const timestamp = Date.now().toString();
-    const recvWindow = 5000;
-    const paramStr = new URLSearchParams({ ...params, api_key: apiKey, recv_window: recvWindow, timestamp }).toString();
+    const recvWindow = "5000";
+    
+    // Generate signature
+    const queryString = method === 'GET' ? 
+      `?${new URLSearchParams(params).toString()}` : '';
+    const payload = timestamp + apiKey + recvWindow + endpoint + queryString + 
+                   (method === 'POST' ? JSON.stringify(params) : '');
+    
+    const signature = crypto
+      .createHmac('sha256', apiSecret)
+      .update(payload)
+      .digest('hex');
 
-    const signature = crypto.createHmac('sha256', apiSecret).update(paramStr).digest('hex');
+    // Forward request to Bybit
+    const config = {
+      method: method,
+      url: `${baseUrl}${endpoint}${queryString}`,
+      headers: {
+        'X-BYBIT-API-KEY': apiKey,
+        'X-BYBIT-TIMESTAMP': timestamp,
+        'X-BYBIT-SIGN': signature,
+        'X-BYBIT-RECV-WINDOW': recvWindow,
+        'Content-Type': 'application/json'
+      },
+      data: method === 'POST' ? params : undefined
+    };
 
-    const fullUrl = `${baseUrl}${endpoint}?${paramStr}&sign=${signature}`;
-    const response = await axios.get(fullUrl);
-    res.json(response.data);
-  } catch (err) {
-    console.error(err);
-    res.status(500).send({ error: err.toString() });
+    const bybitResponse = await axios(config);
+    res.json(bybitResponse.data);
+  } catch (error) {
+    console.error('Proxy error:', error);
+    res.status(500).json({ 
+      error: "Proxy error",
+      message: error.message,
+      details: error.response?.data || null 
+    });
   }
 });
 
+// Start server
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Proxy running on port ${PORT}`);
+  console.log(`Bybit proxy server running on port ${PORT}`);
 });
