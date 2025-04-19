@@ -1,6 +1,7 @@
 services:
   - type: web
-    name: bybit-proxy
+    name: bybit-proxy-free
+    plan: free
     runtime: node
     buildCommand: npm install
     startCommand: npm start
@@ -8,3 +9,5 @@ services:
     envVars:
       - key: NODE_VERSION
         value: 18.x
+    healthCheckPath: /health
+    autoDeploy: true
