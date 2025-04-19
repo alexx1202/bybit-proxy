@@ -18,13 +18,18 @@ app.post('/bybit-proxy', async (req, res) => {
     const timeout = 25000; // 25s (leaving 5s buffer)
     
     const { apiKey, apiSecret, endpoint, params, testnet, method } = req.body;
-    
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeout);
 
+    // ✅ LOGGING START
+    console.log(`[Proxy] testnet param: ${testnet}`);
     const baseUrl = testnet 
       ? "https://api-testnet.bybit.com" 
       : "https://api.bybit.com";
+    console.log(`[Proxy] Using baseUrl: ${baseUrl}`);
+    console.log(`[Proxy] Requesting ${method} ${endpoint}`);
+    // ✅ LOGGING END
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
 
     const timestamp = Date.now().toString();
     const signature = crypto
@@ -52,6 +57,7 @@ app.post('/bybit-proxy', async (req, res) => {
     if (error.name === 'AbortError') {
       res.status(504).json({ error: "Request timeout", message: "Render free tier timeout approached" });
     } else {
+      console.error(`[Proxy] ERROR: ${error.message}`);
       res.status(500).json({ 
         error: "Proxy error",
         message: error.message
