@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: bybit-proxy
+    runtime: node
+    buildCommand: npm install
+    startCommand: npm start
+    env: node
+    envVars:
+      - key: NODE_VERSION
+        value: 18.x
